@@ -34,6 +34,37 @@ class _AlarmListScreenState extends State<AlarmListScreen>
 
   // --- Helper Functions ---
 
+  // --- Helper to check if any alarms are enabled ---
+  bool _areAnyAlarmsEnabled() {
+    return _alarms.any((alarm) => alarm.isEnabled);
+  }
+
+  // --- Service Start/Stop Trigger ---
+  Future<void> _updateServiceStatusBasedOnAlarms() async {
+    final service = FlutterBackgroundService();
+    bool shouldBeRunning = _areAnyAlarmsEnabled();
+    bool isRunning = await service.isRunning();
+
+    if (shouldBeRunning && !isRunning) {
+      print("First alarm enabled. Starting background service...");
+      try {
+        await service.startService();
+        // Optional: Update UI state if needed after start
+        if (mounted) _checkServiceStatus();
+      } catch (e) {
+        print("Error starting service: $e");
+        // Handle error (e.g., show a message)
+      }
+    } else if (!shouldBeRunning && isRunning) {
+      print(
+        "Last alarm disabled/deleted. Telling background service to stop...",
+      );
+      service.invoke("stopService"); // Ask the service to stop itself
+      // Optional: Update UI state if needed after requesting stop
+      if (mounted) _checkServiceStatus(); // Reflect requested stop attempt
+    }
+  }
+
   DateTime _calculateNextTriggerTime(AlarmInfo alarm) {
     final now = DateTime.now();
     final TimeOfDay time = alarm.time;
@@ -415,6 +446,7 @@ class _AlarmListScreenState extends State<AlarmListScreen>
     // Calculate the precise next trigger time
     final DateTime scheduledDateTime = _calculateNextTriggerTime(alarm);
     alarm.nextTriggerTime = scheduledDateTime; // Update the alarm object
+    alarm.isEnabled = true;
 
     print(
       "Scheduling Alarm ID: ${alarm.id} for: $scheduledDateTime with ${alarm.shakeCount} shakes",
@@ -432,10 +464,13 @@ class _AlarmListScreenState extends State<AlarmListScreen>
     );
 
     if (success) {
-      alarm.isEnabled = true; // Ensure it's marked enabled
+      // alarm.isEnabled = true; // Ensure it's marked enabled
       await AlarmStorage.saveAlarms(
         _alarms,
       ); // Save ALL alarms (including the updated nextTriggerTime)
+
+      // --- Start service if needed ---
+      await _updateServiceStatusBasedOnAlarms();
       if (mounted) {
         setState(() {}); // Update UI to show new trigger time
 
@@ -486,6 +521,11 @@ class _AlarmListScreenState extends State<AlarmListScreen>
     alarm.nextTriggerTime = null; // Clear trigger time
     await AlarmStorage.saveAlarms(_alarms); // Save changes
 
+    // --- Stop service if needed ---
+    await _updateServiceStatusBasedOnAlarms();
+    // ---------------------------
+    // We don't invoke stopService directly here anymore unless it's the last alarm
+
     if (mounted) {
       setState(() {}); // Update UI
       if (showSnackbar) {
@@ -504,8 +544,10 @@ class _AlarmListScreenState extends State<AlarmListScreen>
 
   void _deleteAlarm(int index) async {
     AlarmInfo alarmToDelete = _alarms[index];
+    bool wasEnabled = alarmToDelete.isEnabled;
+
     // First, cancel it if it's enabled/scheduled
-    if (alarmToDelete.isEnabled) {
+    if (wasEnabled) {
       await _cancelAlarm(alarmToDelete, showSnackbar: false); // Cancel silently
     }
     // Then remove from the list and save
@@ -515,13 +557,24 @@ class _AlarmListScreenState extends State<AlarmListScreen>
         _alarms.removeAt(index);
       });
       await AlarmStorage.saveAlarms(_alarms);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${alarmToDelete.label} deleted.')),
-      );
+      // --- Stop service if needed ---
+      if (wasEnabled) {
+        // Only need to check if the deleted one was enabled
+        await _updateServiceStatusBasedOnAlarms();
+      }
+      // ---------------------------
     } else {
       // If not mounted, just update storage without setState
       _alarms.removeAt(index);
       await AlarmStorage.saveAlarms(_alarms);
+      if (wasEnabled) {
+        await _updateServiceStatusBasedOnAlarms();
+      }
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${alarmToDelete.label} deleted!')),
+      );
     }
   }
 

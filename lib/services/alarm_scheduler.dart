@@ -95,8 +95,8 @@ Future<void> initializeService() async {
       autoStart: false,
       isForegroundMode: true,
       notificationChannelId: notificationChannelId, // Use constant
-      initialNotificationTitle: 'Shake Alarm Ready',
-      initialNotificationContent: 'Waiting for alarms...',
+      initialNotificationTitle: 'Shake Wake Active',
+      initialNotificationContent: 'Alarms are set and ready.',
       foregroundServiceNotificationId:
           foregroundServiceNotificationId, // Use constant
     ),

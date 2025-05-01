@@ -47,6 +47,7 @@ dependencies:
   android_intent_plus: ^5.3.0
   package_info_plus: ^8.3.0
   flutter_overlay_window: ^0.5.0
+  flutter_launcher_icons: ^0.14.3
 
 dev_dependencies:
   flutter_test:
@@ -76,6 +77,15 @@ flutter:
     # - assets/audio/ # Create this folder
     # Add your alarm sound file here, e.g.:
   #   - images/a_dot_ham.jpeg
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icons/shake_wake_app_icon.png" # Replace with the actual path to your icon
+  # You can add platform-specific image paths if needed:
+  # image_path_android: "assets/icons/android_icon.png"
+  # image_path_ios: "assets/icons/ios_icon.png"
+  adaptive_icon_background: "#FFFFFF" # Optional: Specify background color for Android adaptive icons
+  adaptive_icon_foreground: "assets/icons/shake_wake_app_icon.png" # Optional: Specify foreground image for Android adaptive icons
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
