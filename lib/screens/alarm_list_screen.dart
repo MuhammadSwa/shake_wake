@@ -451,7 +451,13 @@ class _AlarmListScreenState extends State<AlarmListScreen>
     print(
       "Scheduling Alarm ID: ${alarm.id} for: $scheduledDateTime with ${alarm.shakeCount} shakes",
     );
+
+    // Store BOTH temp values before scheduling
     await AlarmStorage.storeTemporaryShakeCount(alarm.id, alarm.shakeCount);
+    await AlarmStorage.storeTemporarySoundInfo(
+      alarm.id,
+      alarm.selectedSound,
+    ); // ADDED
 
     final bool success = await AndroidAlarmManager.oneShotAt(
       scheduledDateTime,
@@ -485,6 +491,7 @@ class _AlarmListScreenState extends State<AlarmListScreen>
       }
     } else {
       await AlarmStorage.removeTemporaryShakeCount(alarm.id);
+      await AlarmStorage.removeTemporarySoundInfo(alarm.id); // ADDED
       if (mounted) {
         alarm.isEnabled = false; // Reflect failure in UI
         alarm.nextTriggerTime = null;
@@ -504,6 +511,7 @@ class _AlarmListScreenState extends State<AlarmListScreen>
 
     // Clean up the temporary shake count data from SharedPreferences
     await AlarmStorage.removeTemporaryShakeCount(alarm.id);
+    await AlarmStorage.removeTemporarySoundInfo(alarm.id); // ADDED
 
     // If this specific alarm is potentially ringing, try to stop the service
     final service = FlutterBackgroundService();
@@ -589,43 +597,73 @@ class _AlarmListScreenState extends State<AlarmListScreen>
 
     if (result != null && mounted) {
       // --- Auto-enable logic ---
-      bool wasPreviouslyDisabled = false;
-      if (existingAlarm != null && !existingAlarm.isEnabled) {
-        print(
-          "Editing a previously disabled alarm. It will be enabled upon saving.",
-        );
-        wasPreviouslyDisabled = true;
-        result.isEnabled = true; // Force enable the result
+      // bool wasPreviouslyDisabled = false;
+      bool wasPreviouslyDisabled =
+          existingAlarm != null && !existingAlarm.isEnabled;
+      bool originallyEnabled = existingAlarm?.isEnabled ?? false;
+      if (wasPreviouslyDisabled) {
+        result.isEnabled = true;
+      }
+
+      int existingIndex =
+          existingAlarm != null
+              ? _alarms.indexWhere((a) => a.id == existingAlarm.id)
+              : -1;
+
+      if (existingIndex != -1) {
+        if (originallyEnabled && result.isEnabled) {
+          // Clean up BOTH temp values for the old scheduled alarm
+          await AndroidAlarmManager.cancel(_alarms[existingIndex].id);
+          await AlarmStorage.removeTemporaryShakeCount(
+            _alarms[existingIndex].id,
+          );
+          await AlarmStorage.removeTemporarySoundInfo(
+            _alarms[existingIndex].id,
+          ); // ADDED
+        }
+        _alarms[existingIndex] = result;
+      } else {
+        _alarms.add(result);
+      }
+
+      await AlarmStorage.saveAlarms(_alarms);
+      // wasPreviouslyDisabled = true;
+      // result.isEnabled = true; // Force enable the result
+      if (result.isEnabled) {
+        await _scheduleAlarm(result); // Schedules and stores new temp values
+      } else {
+        await _updateServiceStatusBasedOnAlarms();
+        setState(() {});
       }
       // -------------------------
 
-      setState(() {
-        int existingIndex = -1;
-        if (existingAlarm != null) {
-          existingIndex = _alarms.indexWhere((a) => a.id == existingAlarm.id);
-        }
-
-        if (existingIndex != -1) {
-          // Editing existing: Cancel the old one first if it was enabled
-          // Don't cancel if it was previously disabled (wasPreviouslyDisabled == true)
-          // because there's nothing scheduled to cancel.
-          if (_alarms[existingIndex].isEnabled && !wasPreviouslyDisabled) {
-            _cancelAlarm(_alarms[existingIndex], showSnackbar: false);
-          }
-          _alarms[existingIndex] = result;
-        } else {
-          // Adding new
-          _alarms.add(result);
-        }
-
-        // Schedule if the result is enabled (it might have been auto-enabled)
-        if (result.isEnabled) {
-          _scheduleAlarm(result); // This will show the time-left snackbar
-        } else {
-          // Save if initially disabled (or if editing kept it disabled - though unlikely now)
-          AlarmStorage.saveAlarms(_alarms);
-        }
-      });
+      // setState(() {
+      //   int existingIndex = -1;
+      //   if (existingAlarm != null) {
+      //     existingIndex = _alarms.indexWhere((a) => a.id == existingAlarm.id);
+      //   }
+      //
+      //   if (existingIndex != -1) {
+      //     // Editing existing: Cancel the old one first if it was enabled
+      //     // Don't cancel if it was previously disabled (wasPreviouslyDisabled == true)
+      //     // because there's nothing scheduled to cancel.
+      //     if (_alarms[existingIndex].isEnabled && !wasPreviouslyDisabled) {
+      //       _cancelAlarm(_alarms[existingIndex], showSnackbar: false);
+      //     }
+      //     _alarms[existingIndex] = result;
+      //   } else {
+      //     // Adding new
+      //     _alarms.add(result);
+      //   }
+      //
+      //   // Schedule if the result is enabled (it might have been auto-enabled)
+      //   if (result.isEnabled) {
+      //     _scheduleAlarm(result); // This will show the time-left snackbar
+      //   } else {
+      //     // Save if initially disabled (or if editing kept it disabled - though unlikely now)
+      //     AlarmStorage.saveAlarms(_alarms);
+      //   }
+      // });
     }
   }
 
@@ -792,6 +830,18 @@ class _AlarmListScreenState extends State<AlarmListScreen>
                                 : (alarm.isEnabled
                                     ? 'Scheduling...'
                                     : 'Disabled');
+                        // --- Modified Subtitle ---
+                        String subtitleText =
+                            '${alarm.formattedTime} - ${alarm.shakeCount} shakes\n';
+                        subtitleText +=
+                            '${alarm.formattedDays} - Sound: ${alarm.soundDisplayName}'; // ADD Sound display name
+                        if (alarm.isEnabled && alarm.nextTriggerTime != null) {
+                          subtitleText +=
+                              '\nNext: ${DateFormat.yMd().add_jm().format(alarm.nextTriggerTime!.toLocal())}';
+                        } else if (!alarm.isEnabled) {
+                          subtitleText += '\n(Disabled)';
+                        }
+                        // -----------------------
                         return ListTile(
                           leading: Icon(
                             Icons.alarm,
@@ -804,9 +854,7 @@ class _AlarmListScreenState extends State<AlarmListScreen>
                             alarm.label,
                             style: const TextStyle(fontSize: 18),
                           ),
-                          subtitle: Text(
-                            '${alarm.formattedTime} - ${alarm.shakeCount} shakes\n$nextTrigger',
-                          ),
+                          subtitle: Text(subtitleText),
                           trailing: Switch(
                             value: alarm.isEnabled,
                             onChanged: (bool value) {

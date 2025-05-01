@@ -1,5 +1,7 @@
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart'; // For TimeOfDay
-import 'package:intl/intl.dart'; // For formattedTime
+import 'package:intl/intl.dart';
+import 'package:shake_wake/constants.dart'; // For formattedTime
 
 class AlarmInfo {
   int id; // Unique ID for AlarmManager
@@ -10,6 +12,9 @@ class AlarmInfo {
   DateTime? nextTriggerTime; // Store the next scheduled time
   Set<int>
   selectedDays; // Added: Stores selected weekdays (DateTime.monday = 1, etc.)
+  String? selectedSound; // Added: null means default, path otherwise
+
+  static const String defaultSoundIdentifier = 'default';
 
   AlarmInfo({
     required this.id,
@@ -19,6 +24,7 @@ class AlarmInfo {
     this.isEnabled = true,
     this.nextTriggerTime,
     Set<int>? selectedDays, // Make optional in constructor
+    this.selectedSound, // Allow null initially
   }) : selectedDays = selectedDays ?? {}; // Default to empty set (no repeat)
 
   // --- JSON Serialization ---
@@ -32,6 +38,7 @@ class AlarmInfo {
     'nextTriggerTime': nextTriggerTime?.toIso8601String(),
     // Store Set<int> as List<int>
     'selectedDays': selectedDays.toList(),
+    'selectedSound': selectedSound, // Store the path or null
   };
 
   factory AlarmInfo.fromJson(Map<String, dynamic> json) => AlarmInfo(
@@ -49,6 +56,8 @@ class AlarmInfo {
         json['selectedDays'] != null
             ? Set<int>.from(json['selectedDays'])
             : {}, // Default to empty set if missing
+
+    selectedSound: json['selectedSound'], // Load the path or null
   );
 
   // Helper to get formatted time string
@@ -76,5 +85,30 @@ class AlarmInfo {
       DateTime.sunday: 'Sun',
     };
     return sortedDays.map((day) => dayMap[day] ?? '?').join(', ');
+  }
+// Helper to get the sound source for audioplayers
+  Source get soundSource {
+    if (selectedSound == null || selectedSound == defaultSoundIdentifier) {
+      // Use default asset
+      return AssetSource(audioAssetPath); // From constants.dart
+    } else {
+      // Assume it's a file path
+      // Add error handling here if needed (e.g., check file existence)
+      return DeviceFileSource(selectedSound!);
+    }
+  }
+
+  // Helper for display name
+  String get soundDisplayName {
+     if (selectedSound == null || selectedSound == defaultSoundIdentifier) {
+       return "Default";
+     } else {
+        // Try to extract filename from path
+        try {
+           return selectedSound!.split(RegExp(r'[/\\]')).last; // Basic filename extraction
+        } catch (_) {
+           return selectedSound!; // Fallback to full path if split fails
+        }
+     }
   }
 }

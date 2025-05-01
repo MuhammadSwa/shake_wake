@@ -1,6 +1,8 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import 'package:path/path.dart' as p;
 import '../models/alarm_info.dart';
 import '../services/storage_service.dart';
 
@@ -19,6 +21,7 @@ class _AddEditAlarmScreenState extends State<AddEditAlarmScreen> {
   late TextEditingController _shakeCountController;
   late bool _isEnabled;
   late Set<int> _selectedDays; // State for selected days
+  late String? _selectedSoundPathOrIdentifier; // State for selected sound
 
   // Define weekdays for chips
   final Map<int, String> _weekdays = {
@@ -44,6 +47,8 @@ class _AddEditAlarmScreenState extends State<AddEditAlarmScreen> {
     _isEnabled = widget.alarm?.isEnabled ?? true;
     // Initialize selected days from existing alarm or empty set
     _selectedDays = Set<int>.from(widget.alarm?.selectedDays ?? {});
+    // Initialize selected sound
+    _selectedSoundPathOrIdentifier = widget.alarm?.selectedSound;
   }
 
   @override
@@ -51,6 +56,35 @@ class _AddEditAlarmScreenState extends State<AddEditAlarmScreen> {
     _labelController.dispose();
     _shakeCountController.dispose();
     super.dispose();
+  }
+
+  // --- ADD Sound Picker Logic ---
+  Future<void> _pickSound() async {
+    // Optional: Show a dialog to choose source (Default vs Device)
+    // For simplicity, directly use file picker here. User can skip to keep default.
+
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.audio,
+        allowMultiple: false,
+      );
+
+      if (result != null && result.files.single.path != null) {
+        String? filePath = result.files.single.path;
+        print("Selected audio file: $filePath");
+        setState(() {
+          _selectedSoundPathOrIdentifier = filePath;
+        });
+      } else {
+        // User canceled the picker or file path is null
+        print("Audio file selection cancelled or failed.");
+      }
+    } catch (e) {
+      print("Error picking file: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error picking audio file.')),
+      );
+    }
   }
 
   Future<void> _pickTime() async {
@@ -85,6 +119,7 @@ class _AddEditAlarmScreenState extends State<AddEditAlarmScreen> {
       shakeCount: shakeCount,
       isEnabled: _isEnabled, // Use the current state of the switch
       selectedDays: _selectedDays, // Pass the selected days set
+      selectedSound: _selectedSoundPathOrIdentifier, // Include selected sound
     );
 
     Navigator.pop(context, result);
@@ -133,6 +168,21 @@ class _AddEditAlarmScreenState extends State<AddEditAlarmScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Determine display name for sound
+    String currentSoundDisplayName;
+    if (_selectedSoundPathOrIdentifier == null ||
+        _selectedSoundPathOrIdentifier == AlarmInfo.defaultSoundIdentifier) {
+      currentSoundDisplayName = "Default";
+    } else {
+      try {
+        currentSoundDisplayName = p.basename(
+          _selectedSoundPathOrIdentifier!,
+        ); // Use path package
+      } catch (_) {
+        currentSoundDisplayName = "Custom Sound"; // Fallback display
+      }
+    }
+
     return Scaffold(
       appBar: AppBar(/* ... */),
       body: Padding(
@@ -161,6 +211,32 @@ class _AddEditAlarmScreenState extends State<AddEditAlarmScreen> {
               decoration: const InputDecoration(/*...*/),
               keyboardType: TextInputType.number,
             ),
+            // --- ADD Sound Selector Tile ---
+            const SizedBox(height: 20),
+            ListTile(
+              leading: const Icon(Icons.music_note_outlined),
+              title: const Text("Alarm Sound"),
+              subtitle: Text(
+                currentSoundDisplayName,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+              onTap: _pickSound, // Trigger file picker
+            ),
+            // Optionally add a button to reset to default
+            if (_selectedSoundPathOrIdentifier != null &&
+                _selectedSoundPathOrIdentifier !=
+                    AlarmInfo.defaultSoundIdentifier)
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    _selectedSoundPathOrIdentifier =
+                        null; // Or AlarmInfo.defaultSoundIdentifier
+                  });
+                },
+                child: const Text("Use Default Sound"),
+              ),
+            // -----------------------------
 
             // --- Add Day Selector ---
             _buildDaySelector(),

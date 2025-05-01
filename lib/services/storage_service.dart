@@ -64,37 +64,94 @@ class AlarmStorage {
   static Future<void> storeTriggeringAlarmInfo(
     int alarmId,
     int shakeCount,
+    String? soundInfo,
   ) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(prefsKeyTriggeringAlarmId, alarmId);
     await prefs.setInt(prefsKeyTriggeringShakeCount, shakeCount);
+    if (soundInfo == null) {
+      await prefs.setString(
+        prefsKeyTriggeringSoundInfo,
+        AlarmInfo.defaultSoundIdentifier,
+      );
+    } else {
+      await prefs.setString(prefsKeyTriggeringSoundInfo, soundInfo);
+    }
   }
 
   // Retrieve and clear triggering info
-  static Future<Map<String, int>?> retrieveAndClearTriggeringAlarmInfo() async {
+  static Future<Map<String, dynamic>?>
+  retrieveAndClearTriggeringAlarmInfo() async {
     final prefs = await SharedPreferences.getInstance();
     final initialAlarmId = prefs.getInt(prefsKeyTriggeringAlarmId);
     final initialShakeCount = prefs.getInt(prefsKeyTriggeringShakeCount);
+    final storedSound = prefs.getString(prefsKeyTriggeringSoundInfo);
+    final initialSoundInfo =
+        (storedSound == AlarmInfo.defaultSoundIdentifier) ? null : storedSound;
 
     if (initialAlarmId != null && initialShakeCount != null) {
-      // Clear them after retrieving
+      // Sound can be null
       await prefs.remove(prefsKeyTriggeringAlarmId);
       await prefs.remove(prefsKeyTriggeringShakeCount);
-      return {'id': initialAlarmId, 'count': initialShakeCount};
+      await prefs.remove(prefsKeyTriggeringSoundInfo);
+      return {
+        'id': initialAlarmId,
+        'count': initialShakeCount,
+        'sound': initialSoundInfo,
+      };
     }
     return null;
+  }
+
+  // --- ADD Sound Info Helpers ---
+  static Future<void> storeTemporarySoundInfo(
+    int alarmId,
+    String? soundInfo,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final String soundKey = '$prefsKeySoundInfoPrefix$alarmId';
+    if (soundInfo == null) {
+      // Store a special value for null/default or remove the key
+      await prefs.setString(
+        soundKey,
+        AlarmInfo.defaultSoundIdentifier,
+      ); // Or await prefs.remove(soundKey);
+      print("Stored sound info $soundKey = Default");
+    } else {
+      await prefs.setString(soundKey, soundInfo);
+      print("Stored sound info $soundKey = $soundInfo");
+    }
+  }
+
+  static Future<String?> getTemporarySoundInfo(int alarmId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final String soundKey = '$prefsKeySoundInfoPrefix$alarmId';
+    String? storedValue = prefs.getString(soundKey);
+    // Convert special value back to null if needed
+    return (storedValue == AlarmInfo.defaultSoundIdentifier)
+        ? null
+        : storedValue;
+  }
+
+  static Future<void> removeTemporarySoundInfo(int alarmId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final String soundKey = '$prefsKeySoundInfoPrefix$alarmId';
+    await prefs.remove(soundKey);
+    print("Removed temporary sound info key: $soundKey");
   }
 
   // Clean up all temporary data related to an alarm ID
   static Future<void> cleanupTemporaryAlarmData(int? alarmId) async {
     if (alarmId != null) {
       await removeTemporaryShakeCount(alarmId);
-      // Also attempt to clear triggering info just in case
+      await removeTemporarySoundInfo(alarmId); // ADDED
+      // ... (cleanup triggering info check - keep as is) ...
       final prefs = await SharedPreferences.getInstance();
       final storedTriggerId = prefs.getInt(prefsKeyTriggeringAlarmId);
       if (storedTriggerId == alarmId) {
         await prefs.remove(prefsKeyTriggeringAlarmId);
         await prefs.remove(prefsKeyTriggeringShakeCount);
+        await prefs.remove(prefsKeyTriggeringSoundInfo); // ADDED
       }
       print("Cleaned up temporary data for alarm ID: $alarmId");
     }

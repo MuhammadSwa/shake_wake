@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shake_wake/models/alarm_info.dart';
 
 import '../constants.dart';
 import 'background_service.dart'; // Import onStart
@@ -9,44 +10,72 @@ import 'storage_service.dart'; // Import storage service
 // --- Alarm Callback (Triggered by AlarmManager) ---
 @pragma('vm:entry-point')
 void alarmCallback(int id) async {
-  // This function is called by AndroidAlarmManager when an alarm fires.
   print("Alarm Firing! ID: $id");
 
-  // Retrieve the required shake count stored temporarily for this specific alarm ID
-  final int? shakeCount = await AlarmStorage.getTemporaryShakeCount(id);
+  // Retrieve required data (shake count AND sound info)
+  int? shakeCount = await AlarmStorage.getTemporaryShakeCount(id);
+  String? soundInfo = await AlarmStorage.getTemporarySoundInfo(id); // ADDED
 
-  if (shakeCount == null) {
+  // Fallback logic if temp data not found (e.g., after reboot)
+  if (shakeCount == null || soundInfo == null) {
+    // Check if either is missing
     print(
-      "Error: Could not find shake count for triggered alarm ID: $id. Using default.",
+      "Temporary data not found for alarm ID: $id. Looking up from main list.",
     );
-    // Potentially log this error more formally
-  }
-  final int countToSend = shakeCount ?? 5; // Use default if lookup fails
+    List<AlarmInfo> allAlarms = await AlarmStorage.loadAlarms();
 
-  // Start the background service, passing the alarm ID and shake count
+    AlarmInfo? matchingAlarm; // Declare as nullable
+    try {
+      // Use firstWhere, but handle the StateError if not found
+      matchingAlarm = allAlarms.firstWhere((a) => a.id == id);
+    } on StateError {
+      // Catch the error thrown by firstWhere if no element matches
+      print("Error: Alarm ID $id not found in persisted list after reboot!");
+      // Optionally log this error more permanently
+      return; // Exit if the alarm doesn't exist anymore
+    }
+    if (matchingAlarm != null) {
+      shakeCount ??= matchingAlarm.shakeCount; // Assign if null
+      soundInfo ??= matchingAlarm.selectedSound; // Assign if null
+      print(
+        "Found data from persisted list: Shakes=$shakeCount, Sound=$soundInfo",
+      );
+    } else {
+      print(
+        "Error: Alarm ID $id not found in persisted list after reboot! Cannot trigger service correctly.",
+      );
+      return; // Exit if we can't determine parameters
+    }
+  }
+
+  final int countToSend = shakeCount ?? 5; // Use default as final fallback
+  // soundInfo can remain null (representing default)
+
+  // Start/Invoke background service
   final service = FlutterBackgroundService();
   var isRunning = await service.isRunning();
 
   final Map<String, dynamic> serviceData = {
     'alarmId': id,
     'shakeCount': countToSend,
+    'soundInfo': soundInfo, // ADDED sound info
   };
 
   if (!isRunning) {
-    // Store data for onStart to pick up
-    await AlarmStorage.storeTriggeringAlarmInfo(id, countToSend);
-    // Start the service - onStart will read the stored info
+    // Store triggering info including sound
+    await AlarmStorage.storeTriggeringAlarmInfo(
+      id,
+      countToSend,
+      soundInfo,
+    ); // MODIFIED
     await service.startService();
     print("Background service started by alarm ID: $id");
   } else {
     print(
       "Background service already running, invoking startAlarm for ID: $id",
     );
-    service.invoke("startAlarm", serviceData);
+    service.invoke("startAlarm", serviceData); // Send data
   }
-
-  // Note: Don't remove temporary shake count here. The service should remove it
-  // when the alarm is actually dismissed or cancelled.
 }
 
 // --- Service Initialization ---

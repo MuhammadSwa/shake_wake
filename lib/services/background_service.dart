@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:ui';
 import 'dart:math';
-import 'package:flutter/material.dart'; // Keep for potential future use, but avoid UI elements
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
@@ -23,6 +22,8 @@ void onStart(ServiceInstance service) async {
   // --- Local Variable for Android Instance ---
   // --- Service Instance Variables ---
   final AudioPlayer audioPlayer = AudioPlayer();
+  String? _currentSoundInfo; // ADDED: Store sound path/identifier
+
   StreamSubscription<AccelerometerEvent>? accelerometerSubscription;
   Timer? _shakeCooldownTimer;
   Timer? _periodicTimer; // Renamed from serviceTimer
@@ -183,6 +184,7 @@ void onStart(ServiceInstance service) async {
     _shakeCooldownTimer?.cancel(); // Use the correct variable name
     accelerometerSubscription?.cancel();
     accelerometerSubscription = null;
+    _currentSoundInfo = null; // ADDED: Reset sound info
 
     await _stopAlarmSound(); // Ensure sound is stopped
 
@@ -250,6 +252,7 @@ void onStart(ServiceInstance service) async {
     _shakeCooldownTimer?.cancel(); // Use correct variable name
     accelerometerSubscription?.cancel();
     accelerometerSubscription = null;
+    _currentSoundInfo = null; // ADDED: Reset sound info
 
     await _stopAlarmSound(); // Stop audio
     await _closeAlarmOverlay(); // Close visual display
@@ -340,7 +343,18 @@ void onStart(ServiceInstance service) async {
 
     print("Attempting to play sound for alarm ID: $_currentRingingAlarmId");
     try {
-      await audioPlayer.setSource(AssetSource(audioAssetPath));
+      Source audioSource;
+      if (_currentSoundInfo == null ||
+          _currentSoundInfo == AlarmInfo.defaultSoundIdentifier) {
+        audioSource = AssetSource(audioAssetPath); // Default
+        print("Using default asset source: $audioAssetPath");
+      } else {
+        // Assume it's a device file path
+        audioSource = DeviceFileSource(_currentSoundInfo!);
+        print("Using device file source: $_currentSoundInfo");
+      }
+
+      await audioPlayer.setSource(audioSource);
       await audioPlayer.setReleaseMode(ReleaseMode.loop);
       await audioPlayer.resume();
       _isRinging = true; // Set ringing state
@@ -353,8 +367,19 @@ void onStart(ServiceInstance service) async {
       // Start detection
       startListeningToShakes(); // Renamed function
     } catch (e, stackTrace) {
-      print("FATAL: Error playing sound: $e\n$stackTrace");
+      print(
+        "FATAL: Error playing sound (Source: ${_currentSoundInfo ?? 'Default'}): $e\n$stackTrace",
+      );
+      // OPTIONAL FALLBACK: Try playing default sound on error?
+      // if (_currentSoundInfo != null) {
+      //    print("Falling back to default sound...");
+      //    _currentSoundInfo = null; // Ensure next attempt uses default
+      //    await _playAlarmSound(); // Recursive call - careful! Limit retries?
+      // } else {
+
       // *** Call full stop on critical error ***
+      // Stop if default also failed or error wasn't file-related
+      // }
       await _stopServiceAndCleanup();
     }
   }
@@ -389,6 +414,8 @@ void onStart(ServiceInstance service) async {
         event.containsKey('shakeCount')) {
       int incomingAlarmId = event['alarmId'];
       int incomingShakeCount = event['shakeCount'] ?? 5;
+      // *** ADDED: Read sound info ***
+      String? incomingSoundInfo = event['soundInfo'];
 
       if (_isRinging && _currentRingingAlarmId != incomingAlarmId) {
         print(
@@ -410,6 +437,7 @@ void onStart(ServiceInstance service) async {
       // Set state for the new alarm
       _currentRingingAlarmId = incomingAlarmId; // Use correct variable name
       _requiredShakeCount = incomingShakeCount; // Use correct variable name
+      _currentSoundInfo = incomingSoundInfo; // *** Store sound info ***
       _currentShakeCount = 0; // Reset count
       _isShakeCooldown = false; // Reset cooldown
       _shakeCooldownTimer?.cancel(); // Cancel timer
@@ -428,12 +456,15 @@ void onStart(ServiceInstance service) async {
     // Started for a specific alarm trigger
     final initialAlarmId = initialData['id'];
     final initialShakeCount = initialData['count'];
+    // *** ADDED: Read sound info ***
+    final initialSoundInfo = initialData['sound'];
     print(
       "Service starting in RINGING state for alarm ID $initialAlarmId, Shakes $initialShakeCount",
     );
 
     _currentRingingAlarmId = initialAlarmId; // Use correct variable name
     _requiredShakeCount = initialShakeCount ?? 5; // Use correct variable name
+    _currentSoundInfo = initialSoundInfo; // *** Store sound info ***
     _currentShakeCount = 0; // Use correct variable name
     await _playAlarmSound(); // Enters ringing state
   } else {
