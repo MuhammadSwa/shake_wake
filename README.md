@@ -56,7 +56,3 @@ Shake Wake requires several sensitive permissions to function reliably:
 ## Contributing
 
 Contributions are welcome! Please feel free to submit pull requests or open issues.
-
-## (Optional: License)
-
-This project is licensed under the MIT License - see the LICENSE file for details.
