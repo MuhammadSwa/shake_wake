@@ -28,6 +28,7 @@ void onStart(ServiceInstance service) async {
   Timer? _shakeCooldownTimer;
   Timer? _periodicTimer; // Renamed from serviceTimer
 
+
   // Check the type once and store it, or null if not Android
   final AndroidServiceInstance? localAndroidService =
       (service is AndroidServiceInstance) ? service : null;

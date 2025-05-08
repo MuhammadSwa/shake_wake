@@ -13,7 +13,9 @@ Shake Wake forces physical interaction to help ensure you actually wake up. Inst
 *   **Full-Screen Alert:** When the alarm rings, it displays a full-screen overlay (requires permission) showing shake progress.
 *   **Persistent & Reliable:** Alarms are rescheduled after device reboots (requires permission).
 *   **Permission Guidance:** In-app banners guide users to grant necessary permissions (Overlay, Battery Optimization) for optimal reliability.
+## Notes
 *   **Currently, Shake Wake is only available on Android.
+*   **The service doesn't start automatically on reboot
 ## 🚀 Getting Started (for Developers)
 
 1.  **Clone the repository:**
